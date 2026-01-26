@@ -6,9 +6,9 @@
 
 1.1. include the `libwebrtc.aar` into the Android project.
 
-1.2. `import org.webrtc.KrispAudioProcessingImpl`
+1.2. `import org.webrtc.KrispAudioProcessingFactory`
 
-1.3. ` var audioProcessorModule = KrispAudioProcessingImpl()`
+1.3. `var audioProcessorModule = KrispAudioProcessingFactory()`
 
 ### 2 Load dependencies
 2.1. Load the stdlib required by Krisp Audio SDK. Load it before using Krisp.
@@ -21,14 +21,23 @@
 `System.loadLibrary("jingle_peerconnection_so")`
 
 
-### 3. Load the Krisp Dynamic Library with the model
+### 3. Load the Krisp Dynamic Library
+Load the Krisp dynamic library once before initializing a model.
+```
+val krispDllpath = "libkrisp-audio-sdk.so"
+val loaded = KrispAudioProcessingFactory.LoadKrisp(krispDllpath)
+if (!loaded) {
+    // report error, read the logs for the details
+}
+```
+
+### 4. Initialize the Krisp model
 #### 3.1. Using the model file path
 You can load Krisp model specifying file path. For this scenario you should make sure the Android app has access to the file resource.
 
 ```
-val modelFilePath = “c6.f.s.ced125.kw”
-val krispDllpath = "libkrisp-audio-sdk.so" 
-var retValue = audioProcessorModule.Init(modelFilePath, krispDllpath)
+val modelFilePath = "krisp-nc-o-med-v7.kef"
+var retValue = audioProcessorModule.Init(modelFilePath)
 if (!retValue) {
     // report error, read the logs for the details
 }
@@ -39,24 +48,29 @@ Make sure to specify correct file paths, these are hard coded sample values.
 Alternatively, you can load Krisp model by specifying model data content loaded into the memory.
 ```
 var modelData: ByteArray // = load the model into the memory
-audioProcessorModule.InitWithData(modelData, krispDllpath)
+audioProcessorModule.Init(modelData)
 if (!retValue) {
     return null
 }
 ```
 
-### 4. Enable, disable Krisp NC during runtime
+### 5. Enable, disable Krisp NC during runtime
 to enable Krisp NC during runtime
 `audioProcessorModule.Enable(true)`
 
 to disable Krisp NC
 `audioProcessorModule.Enable(false)`
 
-### 5. Integrate Krisp Module into the WebRTC PeerConnectionFactory
+### 6. Integrate Krisp Module into the WebRTC PeerConnectionFactory
 ```
 PeerConnectionFactory
             .builder()
             .setAudioProcessingFactory(audioProcessorModule)
+```
+
+### 7. Unload Krisp when done
+```
+KrispAudioProcessingFactory.UnloadKrisp()
 ```
 
 

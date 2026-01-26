@@ -8,6 +8,7 @@ rtc_library("krisp_processor") {
    configs += [ "../modules/audio_processing:apm_debug_dump", ]
    configs += [ "//build/config/android:hide_all_but_jni" ]
    defines = ["WEBRTC_ANDROID", "WEBRTC_POSIX",]
+   include_dirs = [ "krisp_c_api_include" ] 
    sources = [
       "krisp_processor.cc",
       "krisp_processor_jni.cc",
@@ -24,12 +25,12 @@ rtc_library("krisp_processor") {
 rtc_android_library("krisp_java") {
   visibility = [ "*" ]
   sources = [
-    "java/src/org/webrtc/KrispAudioProcessingImpl.java",]
+    "java/src/org/webrtc/KrispAudioProcessingFactory.java",]
   deps = ["//sdk/android:peerconnection_java",]
 }
 
 generate_jni("generated_krisp_jni") {
-    sources = [ "java/src/org/webrtc/KrispAudioProcessingImpl.java",]
+    sources = [ "java/src/org/webrtc/KrispAudioProcessingFactory.java",]
     namespace = "Krisp"
     jni_generator_include = "//sdk/android/src/jni/jni_generator_helper.h"
 }

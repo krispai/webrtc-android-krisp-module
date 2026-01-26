@@ -1,26 +1,31 @@
-#include "inc/krisp-audio-sdk.hpp"
-#include "inc/krisp-audio-sdk-nc.hpp"
+// required by KrispRetVal, KrispLogLevel, KrispVersionInfo
+#include "krisp-audio-sdk-c.h"
+// required by KrispNcSessionConfig, KrispNcHandle, KrispNcPerFrameStats
+#include "krisp-audio-sdk-nc-c.h"
 
 
 namespace KrispSDK
 {
-	bool LoadDll(const char* dllPath);
-	void UnloadDll();
-	bool GlobalInit(void* param);
-	int SetModel(const wchar_t*  weightFilePath, const char* modelName);
-	int SetModelBlob(const void* weightBlob, unsigned int blobSize, const char* modelName);
-	int RemoveModel(const char* modelName);
-	int GlobalDestroy();
-	int NcCloseSession(void* m_session); 
-	KrispAudioSessionID NcCreateSession(
-		KrispAudioSamplingRate inputSampleRate,
-		KrispAudioSamplingRate outputSampleRate,
-		KrispAudioFrameDuration frameDuration,
-		const char* modelName);
-	int NcCleanAmbientNoiseFloat(
-		KrispAudioSessionID pSession,
-		const float* pFrameIn,
-		unsigned int frameInSize,
-		float* pFrameOut,
-		unsigned int frameOutSize);
+  // Loads the Krisp SDK shared library from the provided path.
+  bool LoadDll(const char* dllPath);
+  void UnloadDll();
+
+  // Global lifecycle.
+  KrispRetVal GlobalInit(const wchar_t* workingPath,
+                         void (*logCallback)(const char*, KrispLogLevel),
+                         KrispLogLevel logLevel);
+  KrispRetVal GlobalDestroy();
+
+  // Noise cancellation session management.
+  krispNcHandle CreateNcFloat(const KrispNcSessionConfig* config);
+  KrispRetVal DestroyNcFloat(const krispNcHandle session);
+
+  // Per-frame processing.
+  KrispRetVal ProcessNcFloat(const krispNcHandle session,
+                             const float* inputSamples,
+                             size_t numInputSamples,
+                             float* outputSamples,
+                             size_t numOutputSamples,
+                             float noiseSuppressionLevel = 100.0f,
+                             KrispNcPerFrameStats* frameStats = nullptr);
 }

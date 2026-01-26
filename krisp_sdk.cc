@@ -1,63 +1,57 @@
 #include "krisp_sdk.h"
 
-#include <stdarg.h>
+// required by dlopen, dlclose, dlsym
 #include <dlfcn.h>
+// required by syslog
 #include <syslog.h>
-
+// required by std::array
 #include <array>
+// required by std::call_once
+#include <mutex>
 
 
 namespace KrispSDK {
 
 enum class KrispFunctionId
 {
-	krispAudioGlobalInit = 0,
-	krispAudioGlobalDestroy = 1,
-	krispAudioSetModel = 2,
-	krispAudioSetModelBlob = 3,
-	krispAudioRemoveModel = 4,
-	krispAudioNcCreateSession = 5,
-	krispAudioNcCloseSession = 6,
-	krispAudioNcCleanAmbientNoiseFloat = 7
+	krispGlobalInit = 0,
+	krispGlobalDestroy = 1,
+	krispCreateNcFloat = 2,
+	krispDestroyNc = 3,
+	krispProcessNcFloat = 4,
 };
 
-class KrispAudioSdkDllGate
-{
-public:
+class KrispAudioSdkDllGate {
+ public:
+  static KrispAudioSdkDllGate* singleton() {
+    std::call_once(_initFlag, []() {
+      _singleton = new KrispAudioSdkDllGate;
+    });
+    return _singleton;
+  }
 
-	static KrispAudioSdkDllGate * singleton()
-	{
-		if (!_singleton) 
-		{
-			_singleton = new KrispAudioSdkDllGate;
-		}
-		return _singleton;
-	}
+  bool LoadDll(const char* krispDllPath) {
+    dlerror();
+    _dllHandle = dlopen(krispDllPath, RTLD_LAZY);
+    if (!_dllHandle) {
+      syslog(LOG_ERR,
+             "KrispSDK::LoadDll: Failed to load the library = %s\n",
+             krispDllPath);
+      return false;
+    }
+    syslog(LOG_INFO, "Krisp DLL loaded: %s", krispDllPath);
+    return LoadFunctions();
+  }
 
-	bool LoadDll(const char* krispDllPath)
-	{
-		dlerror();
-		_dllHandle = dlopen(krispDllPath, RTLD_LAZY);
-		if (!_dllHandle) {
-			syslog(LOG_ERR, "KrispSDK::LoadDll: Failed to load the library = %s\n", krispDllPath);
-			return false;
-		}
-		syslog(LOG_INFO, "Krisp DLL loaded: %s", krispDllPath);
-		return LoadFunctions();
-	}
-
-	void UnloadDll()
-	{
-		if (_dllHandle)
-		{
-			dlclose(_dllHandle);
-			_dllHandle = nullptr;
-		}
-		for (auto & functionPtr : _functionPointers)
-		{
-			functionPtr = nullptr;
-		}
-	}
+  void UnloadDll() {
+    if (_dllHandle) {
+      dlclose(_dllHandle);
+      _dllHandle = nullptr;
+    }
+    for (auto& functionPtr : _functionPointers) {
+      functionPtr = nullptr;
+    }
+  }
 
 	template<typename ReturnType, typename... Args>
 	ReturnType InvokeFunction(KrispFunctionId functionId, Args... args)
@@ -93,23 +87,22 @@ private:
 	}
 
 	static KrispAudioSdkDllGate * _singleton;
+	static std::once_flag _initFlag;
 	void* _dllHandle = nullptr;
-	static constexpr unsigned int _functionCount = 8;
+	static constexpr unsigned int _functionCount = 5;
 	static constexpr std::array<const char *, _functionCount> _functionNames =
 	{
-		"krispAudioGlobalInit",
-		"krispAudioGlobalDestroy",
-		"krispAudioSetModel",
-		"krispAudioSetModelBlob",
-		"krispAudioRemoveModel",
-		"krispAudioNcCreateSession",
-		"krispAudioNcCloseSession",
-		"krispAudioNcCleanAmbientNoiseFloat"
+		"krispGlobalInit",
+		"krispGlobalDestroy",
+		"krispCreateNcFloat",
+		"krispDestroyNc",
+		"krispProcessNcFloat"
 	};
 	std::array<void *, _functionCount> _functionPointers = {};
 };
 
 KrispAudioSdkDllGate * KrispAudioSdkDllGate::_singleton = nullptr;
+std::once_flag KrispAudioSdkDllGate::_initFlag;
 
 template<typename ReturnType, typename... Args>
 ReturnType InvokeFunction(KrispFunctionId functionId, Args... args)
@@ -127,72 +120,44 @@ void UnloadDll()
 	KrispAudioSdkDllGate::singleton()->UnloadDll();
 }
 
-bool GlobalInit(void* param)
+KrispRetVal GlobalInit(const wchar_t* workingPath,
+					  void (*logCallback)(const char*, KrispLogLevel),
+					  KrispLogLevel logLevel)
 {
-	int result = InvokeFunction<int>(KrispFunctionId::krispAudioGlobalInit, param);
-	return  result == 0 ? true: false;
+	return InvokeFunction<KrispRetVal>(KrispFunctionId::krispGlobalInit, workingPath, logCallback, logLevel);
 }
 
-int SetModel(const wchar_t* weightFilePath, const char* modelName)
+KrispRetVal GlobalDestroy()
 {
-	int result = InvokeFunction<int>(KrispFunctionId::krispAudioSetModel, weightFilePath, modelName);
-	return result;
+	return InvokeFunction<KrispRetVal>(KrispFunctionId::krispGlobalDestroy);
 }
 
-int SetModelBlob(const void* modelAddress, unsigned int modelSize, const char* modelName)
+krispNcHandle CreateNcFloat(const KrispNcSessionConfig* config)
 {
-	int result = InvokeFunction<int>(KrispFunctionId::krispAudioSetModelBlob, modelAddress, modelSize, modelName);
-	return result;
+	return InvokeFunction<krispNcHandle>(KrispFunctionId::krispCreateNcFloat, config);
 }
 
-int RemoveModel(const char* modelName)
+KrispRetVal DestroyNcFloat(const krispNcHandle session)
 {
-	return InvokeFunction<int>(KrispFunctionId::krispAudioRemoveModel, modelName);
+	return InvokeFunction<KrispRetVal>(KrispFunctionId::krispDestroyNc, session);
 }
 
-int GlobalDestroy()
+KrispRetVal ProcessNcFloat(const krispNcHandle session,
+						   const float* inputSamples,
+						   size_t numInputSamples,
+						   float* outputSamples,
+						   size_t numOutputSamples,
+						   float noiseSuppressionLevel,
+						   KrispNcPerFrameStats* frameStats)
 {
-	int result = InvokeFunction<int>(KrispFunctionId::krispAudioGlobalDestroy);
-	return result;
-}
-
-int NcCloseSession(void* session)
-{
-	int result = InvokeFunction<int>(KrispFunctionId::krispAudioNcCloseSession, session);
-	return result;
-}
-
-KrispAudioSessionID NcCreateSession(
-	KrispAudioSamplingRate inputSampleRate,
-	KrispAudioSamplingRate outputSampleRate,
-	KrispAudioFrameDuration frameDuration,
-	const char* modelName)
-{
-    
-    KrispAudioSessionID result = InvokeFunction<KrispAudioSessionID>(KrispFunctionId::krispAudioNcCreateSession,
-        inputSampleRate, 
-        outputSampleRate,
-        frameDuration,
-        modelName);
-
-    return result;
-}
-
-int NcCleanAmbientNoiseFloat(
-	KrispAudioSessionID pSession,
-	const float* pFrameIn,
-	unsigned int frameInSize,
-	float* pFrameOut,
-	unsigned int frameOutSize)
-{
-    int result = InvokeFunction<int>(KrispFunctionId::krispAudioNcCleanAmbientNoiseFloat,
-		pSession,
-		pFrameIn,
-		frameInSize,
-		pFrameOut,
-		frameOutSize
-	);
-    return result;
+	return InvokeFunction<KrispRetVal>(KrispFunctionId::krispProcessNcFloat,
+									   session,
+									   inputSamples,
+									   numInputSamples,
+									   outputSamples,
+									   numOutputSamples,
+									   noiseSuppressionLevel,
+									   frameStats);
 }
 
 } 
